@@ -1,8 +1,12 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-#include "config.h"
 #include <Arduino.h>
+
+#include "config.h"
+
+extern volatile uint32_t stepCountR;
+extern volatile uint32_t stepCountL;
 
 // --- Hardware Timers for ESP32 ---
 extern hw_timer_t *timerR;
@@ -20,9 +24,9 @@ extern portMUX_TYPE timerMuxL;
 
 // Inline Build Info Function
 inline void printBuildInfo() {
-	Serial.println(F("============================================="));
+	Serial.println(F("========================================"));
 	Serial.print(F("Board Target: "));
-	Serial.println(F("LilyGo T-Display-S3 AMOLED (ESP32-S3)"));
+	Serial.println(F("LilyGo T-Display-S3 AMOLED"));
 	Serial.print(F("CPU Speed:    "));
 	Serial.print(F(STRINGIFY(F_CPU)));
 	Serial.println(F(" Hz"));
@@ -33,30 +37,7 @@ inline void printBuildInfo() {
 	Serial.print(F(__DATE__));
 	Serial.print(F(" "));
 	Serial.println(F(__TIME__));
-	Serial.println(F("============================================="));
-}
-
-// Fast I/O helpers (Standard ESP32 digitalRead/Write are extremely fast at 240MHz)
-inline int fastDigitalRead(uint8_t pin) {
-	return digitalRead(pin);
-}
-
-inline void fastDigitalWrite(uint8_t pin, uint8_t val) {
-	digitalWrite(pin, val);
-}
-
-// --- IR Distance Sensor Conversion (Sharp GP2Y0A21YK0F) ---
-inline float readSensorDistanceMeters(uint8_t pin) {
-	uint16_t rawADC = analogRead(pin);
-
-	// ESP32 uses a 12-bit ADC (0-4095) at 3.3V.
-	// Convert this back to the 10-bit 5V equivalent used in the original math:
-	float voltage = ((float)rawADC / 4095.0f) * 3.3f;
-	float equivalent10BitADC = (voltage / 5.0f) * 1023.0f;
-
-	if(equivalent10BitADC < 80.0f) return 0.80f;
-	float distanceMeters = (67.87f / (equivalent10BitADC - 3.0f)) - 0.04f;
-	return constrain(distanceMeters, 0.10f, 0.80f);
+	Serial.println(F("========================================"));
 }
 
 // Direction variables extern mapping
@@ -66,5 +47,6 @@ extern volatile int8_t directionMotorL;
 // Declarations
 void timerSetup();
 void printLoopCycleTime();
+float readSensorDistanceMeters(uint8_t pin);
 
 #endif // UTILS_H

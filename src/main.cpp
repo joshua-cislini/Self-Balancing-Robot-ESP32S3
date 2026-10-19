@@ -1,10 +1,11 @@
+#include <Wire.h>
+
 #include "buzzer.h"
 #include "complementaryFilter.h"
 #include "config.h"
 #include "mpu6050.h"
 #include "pid.h"
 #include "utils.h"
-#include <Wire.h>
 
 ComplementaryFilter angleFilter;
 Mpu6050 IMU(MPU6050_ADDRESS);
@@ -13,16 +14,15 @@ Pid speedPID(SPEED_P, SPEED_I, SPEED_D, SPEED_I_LIMIT);
 Buzzer buzzer(BUZZER_PIN);
 
 void batteryCheck();
-void behaviour();
 void avoid();
 void follow();
 void balance();
-void setMotorSpeed(int16_t tspeed, int8_t motorID);
+void setMotorSpeedSPS(int16_t tspeed, int8_t motorID);
 
 RobotState currentState = RobotState::DISARMED;
 
-uint32_t lastLoopTime = 0; // [us][cite: 10]
-float deltaTime = 0.0f;	   // [s][cite: 10]
+uint32_t lastLoopTime = 0; // [us]
+float deltaTime = 0.0f;	   // [s]
 
 // Explicit Steps/Sec Motion Variables
 float motorSpeedSps = 0.0f;
@@ -38,14 +38,13 @@ void setup() {
 	timerSetup();
 
 	Serial.begin(500000);
-	while(!Serial);
+	while(!Serial && millis() < 3000);
 	printBuildInfo();
 
 	// analogReference(INTERNAL) removed: ESP32 uses 3.3V reference by default
-	// Set ESP32 ADC resolution explicitly to match our math in config.h and utils.h
-	analogReadResolution(12);
-
+	analogReadResolution(12); // Set ESP32 ADC resolution explicitly to match our math in config.h and utils.h
 	randomSeed(analogRead(BATTERY_SENSE_PIN) ^ micros());
+	batteryCheck();
 
 	pinMode(SWITCH_1_PIN, INPUT_PULLUP);
 	pinMode(SWITCH_2_PIN, INPUT_PULLUP);
@@ -55,15 +54,12 @@ void setup() {
 	pinMode(STEPPER_L_DIR_PIN, OUTPUT);
 	pinMode(STEPPER_ENABLE_PIN, OUTPUT);
 	pinMode(STEPPER_SLEEP_PIN, OUTPUT);
-	pinMode(RX_LED_PIN, OUTPUT);
 
-	fastDigitalWrite(STEPPER_ENABLE_PIN, HIGH);
-	fastDigitalWrite(STEPPER_SLEEP_PIN, LOW);
-	fastDigitalWrite(RX_LED_PIN, HIGH);
+	digitalWrite(STEPPER_ENABLE_PIN, HIGH); // !ENABLE = 1 --> DISABLED
+	digitalWrite(STEPPER_SLEEP_PIN, LOW);	// !SLEEP = 0 --> SLEEPING
 
 	// Initialize I2C. Note: On custom ESP32 boards, you may need to map SDA/SCL pins here:
-	// Wire.begin(SDA_PIN, SCL_PIN);
-	Wire.begin();
+	Wire.begin(); // Wire.begin(SDA_PIN, SCL_PIN);
 	Wire.setClock(400000);
 
 	IMU.begin();
@@ -72,47 +68,45 @@ void setup() {
 	float initialAccAngle = atan2f(IMU.getAccelY(), IMU.getAccelZ()) * RAD_TO_DEG;
 	angleFilter.setInitialAngle(initialAccAngle);
 	IMU.serialPrintDebug();
-	Serial.flush();
 
+	Serial.flush();
 	lastLoopTime = micros();
 }
 
 void loop() {
 	uint32_t currentLoopTime = micros();
-	deltaTime = (float)(currentLoopTime - lastLoopTime) * 0.000001f;
+	deltaTime = (float)(currentLoopTime - lastLoopTime) * 0.000001f; // [ms] --> [s]
 	lastLoopTime = currentLoopTime;
 	printLoopCycleTime();
 
-	buzzer.doUpdate();
+	buzzer.update();
 	batteryCheck();
-
 	if(currentState != RobotState::LOW_BATTERY) {
 		if(currentState != RobotState::DISARMED) {
-			bool sw1 = fastDigitalRead(SWITCH_1_PIN);
-			bool sw2 = fastDigitalRead(SWITCH_2_PIN);
-			if(sw1 && sw2) currentState = RobotState::IDLE;
-			else if(!sw1 && sw2) currentState = RobotState::FOLLOW;
-			else if(sw1 && !sw2) currentState = RobotState::CUSTOM_MODE;
-			else currentState = RobotState::AVOID;
+			bool sw1 = digitalRead(SWITCH_1_PIN);
+			bool sw2 = digitalRead(SWITCH_2_PIN);
+			if(sw1 && sw2) {
+				currentState = RobotState::IDLE;
+				targetSpeedSps = 0.0f;
+				turningSpeedSps = 0.0f;
+			} else if(!sw1 && sw2) {
+				currentState = RobotState::AVOID;
+				avoid();
+			} else if(sw1 && !sw2) {
+				currentState = RobotState::FOLLOW;
+				follow();
+			} else {
+				currentState = RobotState::CUSTOM_MODE; // Do whatever
+				targetSpeedSps = 0.0f;
+				turningSpeedSps = 0.0f;
+			}
 		}
-		IMU.updateIMUdata();
-		behaviour();
 		balance();
 	} else {
-		setMotorSpeed(0, 1);
-		setMotorSpeed(0, 2);
-		fastDigitalWrite(STEPPER_ENABLE_PIN, HIGH);
-		fastDigitalWrite(STEPPER_SLEEP_PIN, LOW);
-	}
-
-	uint16_t ledPhase = millis() & 1023;
-	switch(currentState) {
-		case RobotState::LOW_BATTERY: fastDigitalWrite(RX_LED_PIN, (ledPhase & 64) ? LOW : HIGH); break;
-		case RobotState::DISARMED: fastDigitalWrite(RX_LED_PIN, LOW); break;
-		case RobotState::IDLE: fastDigitalWrite(RX_LED_PIN, (ledPhase < 64 || (ledPhase > 128 && ledPhase < 192)) ? LOW : HIGH); break;
-		case RobotState::AVOID: fastDigitalWrite(RX_LED_PIN, ledPhase > 960 ? LOW : HIGH); break;
-		case RobotState::FOLLOW: fastDigitalWrite(RX_LED_PIN, ledPhase < 960 ? LOW : HIGH); break;
-		case RobotState::CUSTOM_MODE: fastDigitalWrite(RX_LED_PIN, (ledPhase & 512) ? LOW : HIGH); break;
+		setMotorSpeedSPS(0, 1);
+		setMotorSpeedSPS(0, 2);
+		digitalWrite(STEPPER_ENABLE_PIN, HIGH);
+		digitalWrite(STEPPER_SLEEP_PIN, LOW);
 	}
 }
 
@@ -120,14 +114,13 @@ void batteryCheck() {
 	static uint32_t lastBatteryCheckTime = 0;
 	static uint32_t lastBatteryWarnBeepTime = 0;
 	static uint8_t lowVoltageCounter = 0;
-	uint32_t now = millis();
 
-	if(now - lastBatteryCheckTime >= 2000) {
+	uint32_t now = millis();
+	if(now - lastBatteryCheckTime >= 1000) {
 		lastBatteryCheckTime = now;
-		if(now < 3000) return;
 
 		uint16_t rawADC = analogRead(BATTERY_SENSE_PIN);
-		float voltage = (float)rawADC * VOLTAGE_DIVIDER_MULT;
+		float voltage = (float)rawADC * VOLTAGE_MULTIPLIER;
 
 		if(voltage < MIN_BAT_VOLTAGE) {
 			lowVoltageCounter++;
@@ -139,10 +132,7 @@ void batteryCheck() {
 
 			if(currentState == RobotState::LOW_BATTERY && voltage > WARN_BAT_VOLTAGE) {
 				currentState = RobotState::DISARMED;
-				fastDigitalWrite(RX_LED_PIN, HIGH);
-			}
-
-			if(currentState != RobotState::LOW_BATTERY && voltage < WARN_BAT_VOLTAGE) {
+			} else if(currentState != RobotState::LOW_BATTERY && voltage < WARN_BAT_VOLTAGE) {
 				if(now - lastBatteryWarnBeepTime > 5000) {
 					lastBatteryWarnBeepTime = now;
 					buzzer.buzz(100);
@@ -153,17 +143,21 @@ void batteryCheck() {
 }
 
 void balance() {
+	IMU.updateIMUdata();
 	float accAngle = atan2f(IMU.getAccelY(), IMU.getAccelZ()) * RAD_TO_DEG;
 	float currentLeanAngle = angleFilter.calculate(accAngle, IMU.getGyroX(), deltaTime);
 
-	if(currentState == RobotState::DISARMED) {
-		setMotorSpeed(0, 1);
-		setMotorSpeed(0, 2);
-		fastDigitalWrite(STEPPER_ENABLE_PIN, HIGH);
-		fastDigitalWrite(STEPPER_SLEEP_PIN, LOW);
+	float targetAngle = speedPID.updatePID(actualTargetSpeedSps, motorSpeedSps, deltaTime);
+	motorSpeedSps = -anglePID.updatePID(targetAngle, currentLeanAngle, deltaTime);
+
+	if(fabsf(currentLeanAngle - targetAngle) > MAX_ACCEPTABLE_ANGLE_ERROR || fabsf(currentLeanAngle) > MAX_ACCEPTABLE_ANGLE) {
+		currentState = RobotState::DISARMED;
+		digitalWrite(STEPPER_ENABLE_PIN, HIGH);
+		digitalWrite(STEPPER_SLEEP_PIN, LOW);
+		buzzer.buzz(10);
 
 		if(millis() > 3000 && fabsf(currentLeanAngle) < START_ANGLE_ERROR) {
-			fastDigitalWrite(STEPPER_SLEEP_PIN, HIGH);
+			digitalWrite(STEPPER_SLEEP_PIN, HIGH);
 			delay(1);
 
 			currentState = RobotState::IDLE;
@@ -181,18 +175,6 @@ void balance() {
 	actualTargetSpeedSps += constrain(targetSpeedSps - actualTargetSpeedSps, -SPEED_ACCELERATION, SPEED_ACCELERATION);
 	actualTurningSpeedSps += constrain(turningSpeedSps - actualTurningSpeedSps, -TURN_ACCELERATION, TURN_ACCELERATION);
 
-	float targetAngle = speedPID.updatePID(actualTargetSpeedSps, motorSpeedSps, deltaTime);
-	motorSpeedSps = -anglePID.updatePID(targetAngle, currentLeanAngle, deltaTime);
-
-	if(fabsf(currentLeanAngle - targetAngle) > MAX_ACCEPTABLE_ANGLE_ERROR ||
-	   fabsf(currentLeanAngle) > MAX_ACCEPTABLE_ANGLE) {
-		currentState = RobotState::DISARMED;
-		fastDigitalWrite(STEPPER_ENABLE_PIN, HIGH);
-		fastDigitalWrite(STEPPER_SLEEP_PIN, LOW);
-		buzzer.buzz(10);
-		return;
-	}
-
 	float rawSpeedMps = spsToMps(motorSpeedSps);
 	float absSpeedMps = fabsf(rawSpeedMps);
 
@@ -204,37 +186,12 @@ void balance() {
 		actualTargetSpeedSps = mpsToSps(brakeAmountMps);
 	}
 
-	int16_t leftMotorSpeed = (motorSpeedSps + actualTurningSpeedSps) * MOTOR_SPEED_MULTIPLIER;
-	int16_t rightMotorSpeed = (motorSpeedSps - actualTurningSpeedSps) * MOTOR_SPEED_MULTIPLIER;
+	int16_t leftMotorSpeedSPS = (motorSpeedSps + actualTurningSpeedSps) * MOTOR_SPEED_MULTIPLIER;
+	int16_t rightMotorSpeedSPS = (motorSpeedSps - actualTurningSpeedSps) * MOTOR_SPEED_MULTIPLIER;
 
-	setMotorSpeed(rightMotorSpeed, 1);
-	setMotorSpeed(leftMotorSpeed, 2);
-	fastDigitalWrite(STEPPER_ENABLE_PIN, LOW);
-}
-
-void behaviour() {
-	switch(currentState) {
-		case RobotState::AVOID:
-			avoid();
-			break;
-
-		case RobotState::FOLLOW:
-			follow();
-			break;
-
-		case RobotState::CUSTOM_MODE:
-			targetSpeedSps = 0.0f;
-			turningSpeedSps = 0.0f;
-			break;
-
-		case RobotState::IDLE:
-		case RobotState::DISARMED:
-		case RobotState::LOW_BATTERY:
-		default:
-			targetSpeedSps = 0.0f;
-			turningSpeedSps = 0.0f;
-			break;
-	}
+	setMotorSpeedSPS(rightMotorSpeedSPS, 1);
+	setMotorSpeedSPS(leftMotorSpeedSPS, 2);
+	digitalWrite(STEPPER_ENABLE_PIN, LOW);
 }
 
 void avoid() {
@@ -296,7 +253,7 @@ void follow() {
  * @param tspeed
  * @param motorID
  */
-void setMotorSpeed(int16_t tspeed, int8_t motorID) {
+void setMotorSpeedSPS(int16_t tspeed, int8_t motorID) {
 	uint32_t timer_period = 65535;
 	int8_t dir = 0;
 
@@ -311,22 +268,22 @@ void setMotorSpeed(int16_t tspeed, int8_t motorID) {
 	if(motorID == 1) { // Right Motor
 		portENTER_CRITICAL(&timerMuxR);
 		directionMotorR = dir;
-		if(dir == 1) fastDigitalWrite(STEPPER_R_DIR_PIN, LOW);
-		else if(dir == -1) fastDigitalWrite(STEPPER_R_DIR_PIN, HIGH);
+		if(dir == 1) digitalWrite(STEPPER_R_DIR_PIN, LOW);
+		else if(dir == -1) digitalWrite(STEPPER_R_DIR_PIN, HIGH);
 
-		// Core 2.x API for updating alarm limits and resetting counters
-		timerAlarmWrite(timerR, timer_period, true);
-		timerWrite(timerR, 0);
+		// Core 3.x API for updating alarms and clearing hardware counters
+		timerAlarm(timerR, timer_period, true, 0);
+		timerRestart(timerR);
 		portEXIT_CRITICAL(&timerMuxR);
 
 	} else if(motorID == 2) { // Left Motor
 		portENTER_CRITICAL(&timerMuxL);
 		directionMotorL = dir;
-		if(dir == 1) fastDigitalWrite(STEPPER_L_DIR_PIN, HIGH);
-		else if(dir == -1) fastDigitalWrite(STEPPER_L_DIR_PIN, LOW);
+		if(dir == 1) digitalWrite(STEPPER_L_DIR_PIN, HIGH);
+		else if(dir == -1) digitalWrite(STEPPER_L_DIR_PIN, LOW);
 
-		timerAlarmWrite(timerL, timer_period, true);
-		timerWrite(timerL, 0);
+		timerAlarm(timerL, timer_period, true, 0);
+		timerRestart(timerL);
 		portEXIT_CRITICAL(&timerMuxL);
 	}
 }

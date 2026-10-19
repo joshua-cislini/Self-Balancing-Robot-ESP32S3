@@ -15,11 +15,11 @@
 // --- Robot System States ---
 enum class RobotState : uint8_t {
 	LOW_BATTERY = 0,
-	DISARMED,
-	IDLE,
-	AVOID,
-	FOLLOW,
-	CUSTOM_MODE
+	DISARMED = 1,
+	IDLE = 2,
+	AVOID = 3,
+	FOLLOW = 4,
+	CUSTOM_MODE = 5
 };
 
 // --- Wheel & Motion Geometry ---
@@ -73,7 +73,7 @@ constexpr float WARN_BAT_VOLTAGE = 10.5f;
 constexpr float MIN_BAT_VOLTAGE = 10.0f;
 
 // Re-calculated for ESP32 12-bit ADC (3.3V reference) replacing the 1.0f/36.80f AVR value
-constexpr float VOLTAGE_DIVIDER_MULT = 0.00448f;
+constexpr float VOLTAGE_MULTIPLIER = 0.00448f; // VOLTAGE_MULTIPLIER = Vactual/rawADC
 
 // Motor acceleration
 constexpr float SPEED_ACCELERATION = 0.008f;

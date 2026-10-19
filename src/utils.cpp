@@ -1,38 +1,56 @@
 #include "utils.h"
-#include "esp_rom_sys.h" // Required for esp_rom_delay_us()
+#include "rom/ets_sys.h" // Required for esp_rom_delay_us()
+
+volatile uint32_t stepCountR = 0;
+volatile uint32_t stepCountL = 0;
 
 hw_timer_t *timerR = NULL;
 hw_timer_t *timerL = NULL;
 portMUX_TYPE timerMuxR = portMUX_INITIALIZER_UNLOCKED;
 portMUX_TYPE timerMuxL = portMUX_INITIALIZER_UNLOCKED;
 
-void timerSetup() {
-	// ESP32 Arduino Core 2.x Timer API
-	timerR = timerBegin(0, 40, true);			   // Timer 0 (Right Motor) - 80MHz / 40 = 2MHz base clock
-	timerAttachInterrupt(timerR, &onTimerR, true); // true = edge triggered
-	timerAlarmWrite(timerR, TIMER_INIT_OCR, true); // true = autoreload
-	timerAlarmEnable(timerR);
-
-	timerL = timerBegin(1, 40, true); // Timer 1 (Left Motor)
-	timerAttachInterrupt(timerL, &onTimerL, true);
-	timerAlarmWrite(timerL, TIMER_INIT_OCR, true);
-	timerAlarmEnable(timerL);
-}
-
-// ISR for Timer 0 (Right Motor Step Generation)
+// ISR for Timer 0 (Right Motor)
 void IRAM_ATTR onTimerR() {
 	if(directionMotorR == 0) return;
+	stepCountR += 1; // Replaces stepCountR++ to satisfy C++20 -Wvolatile rules
 	digitalWrite(STEPPER_R_STEP_PIN, HIGH);
-	esp_rom_delay_us(1); // Safely block for 1 microsecond (replaces the 16 NOPs)
+	esp_rom_delay_us(1);
 	digitalWrite(STEPPER_R_STEP_PIN, LOW);
 }
 
-// ISR for Timer 1 (Left Motor Step Generation)
+// ISR for Timer 1 (Left Motor)
 void IRAM_ATTR onTimerL() {
 	if(directionMotorL == 0) return;
+	stepCountL += 1; // Replaces stepCountL++
 	digitalWrite(STEPPER_L_STEP_PIN, HIGH);
-	esp_rom_delay_us(1); // Safely block for 1 microsecond
+	esp_rom_delay_us(1);
 	digitalWrite(STEPPER_L_STEP_PIN, LOW);
+}
+
+void timerSetup() {
+	// Core 3.x API: Pass frequency in Hz directly (no manual prescaler needed)
+
+	// Timer 0 (Right Motor)
+	timerR = timerBegin(2000000); // 2 MHz base clock
+	timerAttachInterrupt(timerR, &onTimerR);
+	timerAlarm(timerR, TIMER_INIT_OCR, true, 0); // (timer, alarm_value, autoreload, reload_count)
+
+	// Timer 1 (Left Motor)
+	timerL = timerBegin(2000000);
+	timerAttachInterrupt(timerL, &onTimerL);
+	timerAlarm(timerL, TIMER_INIT_OCR, true, 0);
+}
+
+// --- IR Distance Sensor Conversion (Sharp GP2Y0A21YK0F) ---
+float readSensorDistanceMeters(uint8_t pin) {
+	uint16_t rawADC = analogRead(pin);
+
+	// Scale 12-bit 3.3V ADC reading to 10-bit 5V equivalent
+	float equivalent10BitADC = (float)rawADC * 0.164884f;
+
+	if(equivalent10BitADC < 80.0f) return 0.80f;
+	float distanceMeters = (67.87f / (equivalent10BitADC - 3.0f)) - 0.04f;
+	return constrain(distanceMeters, 0.10f, 0.80f);
 }
 
 void printLoopCycleTime() {

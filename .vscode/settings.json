@@ -1,5 +1,6 @@
 {
-    "editor.formatOnSave": true,
-    "editor.defaultFormatter": "ms-vscode.cpptools",
-    "C_Cpp.clang_format_style": "file"
+    "clangd.arguments": [
+        "--compile-commands-dir=c:/Users/Joshua/OneDrive/Source/Embedded/ESP32/ESP32S3/.cache/clangd",
+        "--query-driver=C:/Users/Joshua/.platformio/packages/toolchain-*/bin/*,C:/Users/Joshua/.platformio/packages/tool-*/bin/*"
+    ]
 }
