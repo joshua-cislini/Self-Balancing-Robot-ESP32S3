@@ -7,7 +7,7 @@ class ComplementaryFilter {
 
 	float calculate(float newAngle, float newRate, float dt);
 	void resetValues();
-	void setInitialAngle(float angle);
+	void setInitialAngle_DEG(float angle);
 
   private:
 	// Self-documenting filter coefficients

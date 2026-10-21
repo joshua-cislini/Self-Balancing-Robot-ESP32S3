@@ -98,22 +98,22 @@ constexpr float REVERSE_SPEED_MPS = -0.15f;
 constexpr float TURN_SPEED_DPS = 25.0f;
 
 // --- Conversion Helper Functions ---
-inline float mpsToSps(float speedMps) {
+inline float MPS_To_SPS(float speedMps) {
 	return speedMps * MPS_TO_STEPS_PER_SEC;
 }
 
-inline float spsToMps(float speedSps) {
+inline float SPS_To_MPS(float speedSps) {
 	return speedSps * STEPS_PER_SEC_TO_MPS;
 }
 
-inline float dpsToSps(float turnRateDps) {
+inline float DPS_To_SPS(float turnRateDps) {
 	float radPerSec = turnRateDps * (PI_F / 180.0f);
 	float wheelSpeedMps = -radPerSec * (TRACK_WIDTH_M * 0.5f);
-	return mpsToSps(wheelSpeedMps);
+	return MPS_To_SPS(wheelSpeedMps);
 }
 
-inline float spsToDps(float turnSpeedSps) {
-	float wheelSpeedMps = spsToMps(-turnSpeedSps);
+inline float SPS_To_DPS(float turnSpeedSps) {
+	float wheelSpeedMps = SPS_To_MPS(-turnSpeedSps);
 	float radPerSec = wheelSpeedMps / (TRACK_WIDTH_M * 0.5f);
 	return radPerSec * (180.0f / PI_F);
 }

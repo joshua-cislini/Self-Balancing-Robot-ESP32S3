@@ -42,7 +42,7 @@ void timerSetup() {
 }
 
 // --- IR Distance Sensor Conversion (Sharp GP2Y0A21YK0F) ---
-float readSensorDistanceMeters(uint8_t pin) {
+float readSensDist_M(uint8_t pin) {
 	uint16_t rawADC = analogRead(pin);
 
 	// Scale 12-bit 3.3V ADC reading to 10-bit 5V equivalent

@@ -1,6 +1,16 @@
 {
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
     "clangd.arguments": [
-        "--compile-commands-dir=c:/Users/Joshua/OneDrive/Source/Embedded/ESP32/ESP32S3/.cache/clangd",
-        "--query-driver=C:/Users/Joshua/.platformio/packages/toolchain-*/bin/*,C:/Users/Joshua/.platformio/packages/tool-*/bin/*"
-    ]
+        "--background-index",
+        "--clang-tidy",
+        "--completion-style=detailed",
+        "--header-insertion=never",
+        "--query-driver=C:/Users/Joshua/.platformio/packages/toolchain-xtensa-esp-elf/bin/*,C:/Users/Joshua/.platformio/packages/toolchain-xtensa-esp32s3/bin/*"
+    ],
+    "files.associations": {
+        "*.h": "c",
+        "*.hpp": "cpp",
+        "*.ino": "cpp"
+    }
 }

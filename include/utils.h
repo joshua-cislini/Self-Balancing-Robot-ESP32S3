@@ -47,6 +47,6 @@ extern volatile int8_t directionMotorL;
 // Declarations
 void timerSetup();
 void printLoopCycleTime();
-float readSensorDistanceMeters(uint8_t pin);
+float readSensDist_M(uint8_t pin);
 
 #endif // UTILS_H

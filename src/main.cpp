@@ -17,7 +17,7 @@ void batteryCheck();
 void avoid();
 void follow();
 void balance();
-void setMotorSpeedSPS(int16_t tspeed, int8_t motorID);
+void setMotorSpeed_Sps(int16_t speedSps, int8_t motorID);
 
 RobotState currentState = RobotState::DISARMED;
 
@@ -66,7 +66,7 @@ void setup() {
 	IMU.calibrateGyro();
 	IMU.updateIMUdata();
 	float initialAccAngle = atan2f(IMU.getAccelY(), IMU.getAccelZ()) * RAD_TO_DEG;
-	angleFilter.setInitialAngle(initialAccAngle);
+	angleFilter.setInitialAngle_DEG(initialAccAngle);
 	IMU.serialPrintDebug();
 
 	Serial.flush();
@@ -81,6 +81,7 @@ void loop() {
 
 	buzzer.update();
 	batteryCheck();
+
 	if(currentState != RobotState::LOW_BATTERY) {
 		if(currentState != RobotState::DISARMED) {
 			bool sw1 = digitalRead(SWITCH_1_PIN);
@@ -103,8 +104,8 @@ void loop() {
 		}
 		balance();
 	} else {
-		setMotorSpeedSPS(0, 1);
-		setMotorSpeedSPS(0, 2);
+		setMotorSpeed_Sps(0, 1);
+		setMotorSpeed_Sps(0, 2);
 		digitalWrite(STEPPER_ENABLE_PIN, HIGH);
 		digitalWrite(STEPPER_SLEEP_PIN, LOW);
 	}
@@ -115,7 +116,7 @@ void batteryCheck() {
 	static uint32_t lastBatteryWarnBeepTime = 0;
 	static uint8_t lowVoltageCounter = 0;
 
-	uint32_t now = millis();
+	const uint32_t now = millis();
 	if(now - lastBatteryCheckTime >= 1000) {
 		lastBatteryCheckTime = now;
 
@@ -144,10 +145,10 @@ void batteryCheck() {
 
 void balance() {
 	IMU.updateIMUdata();
-	float accAngle = atan2f(IMU.getAccelY(), IMU.getAccelZ()) * RAD_TO_DEG;
-	float currentLeanAngle = angleFilter.calculate(accAngle, IMU.getGyroX(), deltaTime);
+	const float accAngle = atan2f(IMU.getAccelY(), IMU.getAccelZ()) * RAD_TO_DEG;
+	const float currentLeanAngle = angleFilter.calculate(accAngle, IMU.getGyroX(), deltaTime);
 
-	float targetAngle = speedPID.updatePID(actualTargetSpeedSps, motorSpeedSps, deltaTime);
+	const float targetAngle = speedPID.updatePID(actualTargetSpeedSps, motorSpeedSps, deltaTime);
 	motorSpeedSps = -anglePID.updatePID(targetAngle, currentLeanAngle, deltaTime);
 
 	if(fabsf(currentLeanAngle - targetAngle) > MAX_ACCEPTABLE_ANGLE_ERROR || fabsf(currentLeanAngle) > MAX_ACCEPTABLE_ANGLE) {
@@ -175,62 +176,62 @@ void balance() {
 	actualTargetSpeedSps += constrain(targetSpeedSps - actualTargetSpeedSps, -SPEED_ACCELERATION, SPEED_ACCELERATION);
 	actualTurningSpeedSps += constrain(turningSpeedSps - actualTurningSpeedSps, -TURN_ACCELERATION, TURN_ACCELERATION);
 
-	float rawSpeedMps = spsToMps(motorSpeedSps);
-	float absSpeedMps = fabsf(rawSpeedMps);
+	const float rawSpeedMps = SPS_To_MPS(motorSpeedSps);
+	const float absSpeedMps = fabsf(rawSpeedMps);
 
 	if(absSpeedMps > OVERSPEED_THRESHOLD) {
-		float excessSpeedMps = absSpeedMps - OVERSPEED_THRESHOLD;
-		float brakeDir = (rawSpeedMps > 0.0f) ? -1.0f : 1.0f;
+		const float excessSpeedMps = absSpeedMps - OVERSPEED_THRESHOLD;
+		const float brakeDir = (rawSpeedMps > 0.0f) ? -1.0f : 1.0f;
 
-		float brakeAmountMps = brakeDir * (OVERSPEED_BRAKE_AMOUNT * excessSpeedMps);
-		actualTargetSpeedSps = mpsToSps(brakeAmountMps);
+		const float brakeAmountMps = brakeDir * (OVERSPEED_BRAKE_AMOUNT * excessSpeedMps);
+		actualTargetSpeedSps = MPS_To_SPS(brakeAmountMps);
 	}
 
-	int16_t leftMotorSpeedSPS = (motorSpeedSps + actualTurningSpeedSps) * MOTOR_SPEED_MULTIPLIER;
-	int16_t rightMotorSpeedSPS = (motorSpeedSps - actualTurningSpeedSps) * MOTOR_SPEED_MULTIPLIER;
+	const int16_t leftMotorSpeedSPS = (motorSpeedSps + actualTurningSpeedSps) * MOTOR_SPEED_MULTIPLIER;
+	const int16_t rightMotorSpeedSPS = (motorSpeedSps - actualTurningSpeedSps) * MOTOR_SPEED_MULTIPLIER;
 
-	setMotorSpeedSPS(rightMotorSpeedSPS, 1);
-	setMotorSpeedSPS(leftMotorSpeedSPS, 2);
+	setMotorSpeed_Sps(rightMotorSpeedSPS, 1);
+	setMotorSpeed_Sps(leftMotorSpeedSPS, 2);
 	digitalWrite(STEPPER_ENABLE_PIN, LOW);
 }
 
 void avoid() {
 	static uint32_t turnEndTime = 0;
-	uint32_t now = millis();
+	const uint32_t now = millis();
 
 	if(now < turnEndTime) {
 		targetSpeedSps = 0.0f;
 		return;
 	}
 
-	float leftDistM = readSensorDistanceMeters(LEFTSENSOR_PIN);
-	float rightDistM = readSensorDistanceMeters(RIGHTSENSOR_PIN);
+	const float leftDistM = readSensDist_M(LEFTSENSOR_PIN);
+	const float rightDistM = readSensDist_M(RIGHTSENSOR_PIN);
 
 	if(leftDistM < AVOID_TRIGGER_DIST_M || rightDistM < AVOID_TRIGGER_DIST_M) {
 		targetSpeedSps = 0.0f;
 
-		float turnDir = (rightDistM < leftDistM) ? 1.0f : -1.0f;
-		turningSpeedSps = dpsToSps(turnDir * TURN_SPEED_DPS);
+		const float turnDir = (rightDistM < leftDistM) ? 1.0f : -1.0f;
+		turningSpeedSps = DPS_To_SPS(turnDir * TURN_SPEED_DPS);
 
 		turnEndTime = now + TURN_BASE_TIME + random(0, TURN_RANDOM_AMOUNT);
 		return;
 	}
 
-	targetSpeedSps = mpsToSps(CRUISE_SPEED_MPS);
+	targetSpeedSps = MPS_To_SPS(CRUISE_SPEED_MPS);
 
 	if(leftDistM < AVOID_ADJUST_DIST_M || rightDistM < AVOID_ADJUST_DIST_M) {
-		float distanceDiffM = rightDistM - leftDistM;
-		float turnRateDps = distanceDiffM * (TURN_SPEED_DPS * 2.0f);
-		turningSpeedSps = dpsToSps(turnRateDps);
+		const float distanceDiffM = rightDistM - leftDistM;
+		const float turnRateDps = distanceDiffM * (TURN_SPEED_DPS * 2.0f);
+		turningSpeedSps = DPS_To_SPS(turnRateDps);
 	} else {
 		turningSpeedSps = 0.0f;
 	}
 }
 
 void follow() {
-	float leftDistM = readSensorDistanceMeters(LEFTSENSOR_PIN);
-	float rightDistM = readSensorDistanceMeters(RIGHTSENSOR_PIN);
-	float closestDistM = min(leftDistM, rightDistM);
+	const float leftDistM = readSensDist_M(LEFTSENSOR_PIN);
+	const float rightDistM = readSensDist_M(RIGHTSENSOR_PIN);
+	const float closestDistM = min(leftDistM, rightDistM);
 
 	if(closestDistM > FOLLOW_MAX_DIST_M) {
 		targetSpeedSps = 0.0f;
@@ -238,30 +239,24 @@ void follow() {
 		return;
 	}
 
-	float steerDiffM = leftDistM - rightDistM;
-	float turnRateDps = steerDiffM * (TURN_SPEED_DPS * 2.5f);
-	turningSpeedSps = dpsToSps(turnRateDps);
+	const float steerDiffM = leftDistM - rightDistM;
+	const float turnRateDps = steerDiffM * (TURN_SPEED_DPS * 2.5f);
+	turningSpeedSps = DPS_To_SPS(turnRateDps);
 
-	float distanceErrorM = closestDistM - FOLLOW_TARGET_DIST_M;
-	float speedMps = constrain(distanceErrorM * 1.5f, REVERSE_SPEED_MPS, CRUISE_SPEED_MPS);
-	targetSpeedSps = mpsToSps(speedMps);
+	const float distanceErrorM = closestDistM - FOLLOW_TARGET_DIST_M;
+	const float speedMps = constrain(distanceErrorM * 1.5f, REVERSE_SPEED_MPS, CRUISE_SPEED_MPS);
+	targetSpeedSps = MPS_To_SPS(speedMps);
 }
 
-/**
- * @brief Set the Motor Speed object
- *
- * @param tspeed
- * @param motorID
- */
-void setMotorSpeedSPS(int16_t tspeed, int8_t motorID) {
-	uint32_t timer_period = 65535;
+void setMotorSpeed_Sps(int16_t speedSps, int8_t motorID) {
+	uint32_t timerPeriod = 65535;
 	int8_t dir = 0;
 
-	if(tspeed != 0) {
-		int16_t absSpeed = abs(tspeed);
-		timer_period = 2000000UL / absSpeed;
-		if(timer_period > 65535) timer_period = 65535;
-		dir = (tspeed > 0) ? 1 : -1;
+	if(speedSps != 0) {
+		int16_t absSpeed = abs(speedSps);
+		timerPeriod = 2000000UL / absSpeed;
+		if(timerPeriod > 65535) timerPeriod = 65535;
+		dir = (speedSps > 0) ? 1 : -1;
 	}
 
 	// 2. HARDWARE TIMER UPDATES (Protected by Spinlocks)
@@ -271,18 +266,16 @@ void setMotorSpeedSPS(int16_t tspeed, int8_t motorID) {
 		if(dir == 1) digitalWrite(STEPPER_R_DIR_PIN, LOW);
 		else if(dir == -1) digitalWrite(STEPPER_R_DIR_PIN, HIGH);
 
-		// Core 3.x API for updating alarms and clearing hardware counters
-		timerAlarm(timerR, timer_period, true, 0);
+		timerAlarm(timerR, timerPeriod, true, 0); // Core 3.x API for updating alarms and clearing hardware counters
 		timerRestart(timerR);
 		portEXIT_CRITICAL(&timerMuxR);
-
 	} else if(motorID == 2) { // Left Motor
 		portENTER_CRITICAL(&timerMuxL);
 		directionMotorL = dir;
 		if(dir == 1) digitalWrite(STEPPER_L_DIR_PIN, HIGH);
 		else if(dir == -1) digitalWrite(STEPPER_L_DIR_PIN, LOW);
 
-		timerAlarm(timerL, timer_period, true, 0);
+		timerAlarm(timerL, timerPeriod, true, 0);
 		timerRestart(timerL);
 		portEXIT_CRITICAL(&timerMuxL);
 	}
