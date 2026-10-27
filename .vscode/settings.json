@@ -1,16 +1,15 @@
 {
     "C_Cpp.intelliSenseEngine": "disabled",
+    "C_Cpp.formatting": "clangFormat",
     "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+    "[c][cpp]": {
+        "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
+    },
     "clangd.arguments": [
         "--background-index",
         "--clang-tidy",
         "--completion-style=detailed",
         "--header-insertion=never",
         "--query-driver=C:/Users/Joshua/.platformio/packages/toolchain-xtensa-esp-elf/bin/*,C:/Users/Joshua/.platformio/packages/toolchain-xtensa-esp32s3/bin/*"
-    ],
-    "files.associations": {
-        "*.h": "c",
-        "*.hpp": "cpp",
-        "*.ino": "cpp"
-    }
+    ]
 }

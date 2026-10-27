@@ -4,14 +4,6 @@
 #include <Arduino.h>
 #include <math.h>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
-#ifndef RAD_TO_DEG
-#define RAD_TO_DEG 57.2957795f
-#endif
-
 // --- Robot System States ---
 enum class RobotState : uint8_t {
 	LOW_BATTERY = 0,
@@ -44,7 +36,6 @@ constexpr uint8_t STEPPER_SLEEP_PIN = 6;
 constexpr uint8_t BUZZER_PIN = 7;
 constexpr uint8_t SWITCH_1_PIN = 8;
 constexpr uint8_t SWITCH_2_PIN = 9;
-constexpr uint8_t RX_LED_PIN = 10;
 constexpr uint8_t BATTERY_SENSE_PIN = 11; // Must be an ADC1 channel
 constexpr uint8_t RIGHTSENSOR_PIN = 12;	  // Must be an ADC1 channel
 constexpr uint8_t LEFTSENSOR_PIN = 13;	  // Must be an ADC1 channel
@@ -66,7 +57,7 @@ constexpr float SPEED_I_LIMIT = 200.0f;
 
 constexpr float MAX_ACCEPTABLE_ANGLE_ERROR = 35.0f;
 constexpr float MAX_ACCEPTABLE_ANGLE = 40.0f;
-constexpr float START_ANGLE_ERROR = 1.0f;
+constexpr float MAX_START_ANGLE_ERROR = 1.0f;
 
 // Battery monitor configuration
 constexpr float WARN_BAT_VOLTAGE = 10.5f;

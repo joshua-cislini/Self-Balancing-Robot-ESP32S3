@@ -25,7 +25,7 @@ uint32_t lastLoopTime = 0; // [us]
 float deltaTime = 0.0f;	   // [s]
 
 // Explicit Steps/Sec Motion Variables
-float motorSpeedSps = 0.0f;
+float estimatedMotorSpeedSps = 0.0f;
 float targetSpeedSps = 0.0f;
 float turningSpeedSps = 0.0f;
 float actualTargetSpeedSps = 0.0f;
@@ -101,11 +101,12 @@ void loop() {
 				targetSpeedSps = 0.0f;
 				turningSpeedSps = 0.0f;
 			}
+		} else {
+			digitalWrite(STEPPER_ENABLE_PIN, HIGH);
+			digitalWrite(STEPPER_SLEEP_PIN, LOW);
 		}
 		balance();
 	} else {
-		setMotorSpeed_Sps(0, 1);
-		setMotorSpeed_Sps(0, 2);
 		digitalWrite(STEPPER_ENABLE_PIN, HIGH);
 		digitalWrite(STEPPER_SLEEP_PIN, LOW);
 	}
@@ -148,47 +149,45 @@ void balance() {
 	const float accAngle = atan2f(IMU.getAccelY(), IMU.getAccelZ()) * RAD_TO_DEG;
 	const float currentLeanAngle = angleFilter.calculate(accAngle, IMU.getGyroX(), deltaTime);
 
-	const float targetAngle = speedPID.updatePID(actualTargetSpeedSps, motorSpeedSps, deltaTime);
-	motorSpeedSps = -anglePID.updatePID(targetAngle, currentLeanAngle, deltaTime);
+	// 1. Calculate Target Angle using the current estimatedMotorSpeedSps and inner Angle PID and immediately update targetSpeedSps
+	const float targetAngle = speedPID.updatePID(actualTargetSpeedSps, estimatedMotorSpeedSps, deltaTime);
+	const float targetSpeedSps = -anglePID.updatePID(targetAngle, currentLeanAngle, deltaTime);
+	estimatedMotorSpeedSps = targetSpeedSps;
 
-	if(fabsf(currentLeanAngle - targetAngle) > MAX_ACCEPTABLE_ANGLE_ERROR || fabsf(currentLeanAngle) > MAX_ACCEPTABLE_ANGLE) {
+	// 2. Safety Checks
+	if((fabsf(currentLeanAngle) > MAX_ACCEPTABLE_ANGLE) || (fabsf(currentLeanAngle - targetAngle) > MAX_ACCEPTABLE_ANGLE_ERROR)) {
 		currentState = RobotState::DISARMED;
-		digitalWrite(STEPPER_ENABLE_PIN, HIGH);
-		digitalWrite(STEPPER_SLEEP_PIN, LOW);
 		buzzer.buzz(10);
-
-		if(millis() > 3000 && fabsf(currentLeanAngle) < START_ANGLE_ERROR) {
-			digitalWrite(STEPPER_SLEEP_PIN, HIGH);
-			delay(1);
-
-			currentState = RobotState::IDLE;
-			actualTargetSpeedSps = 0.0f;
-			actualTurningSpeedSps = 0.0f;
-			motorSpeedSps = 0.0f;
-			turningSpeedSps = 0.0f;
-			anglePID.resetPID();
-			speedPID.resetPID();
-			buzzer.buzz(10);
-		}
+		return;
+	} else if((currentState == RobotState::DISARMED) && (fabsf(currentLeanAngle) < MAX_START_ANGLE_ERROR)) {
+		currentState = RobotState::IDLE;
+		buzzer.buzz(10);
+		anglePID.resetPID();
+		speedPID.resetPID();
+		digitalWrite(STEPPER_ENABLE_PIN, LOW);
+		digitalWrite(STEPPER_SLEEP_PIN, HIGH);
+		delay(1);
 		return;
 	}
 
+	// 3. Acceleration profile updates
 	actualTargetSpeedSps += constrain(targetSpeedSps - actualTargetSpeedSps, -SPEED_ACCELERATION, SPEED_ACCELERATION);
 	actualTurningSpeedSps += constrain(turningSpeedSps - actualTurningSpeedSps, -TURN_ACCELERATION, TURN_ACCELERATION);
 
-	const float rawSpeedMps = SPS_To_MPS(motorSpeedSps);
+	// 4. Overspeed braking logic
+	const float rawSpeedMps = SPS_To_MPS(targetSpeedSps);
 	const float absSpeedMps = fabsf(rawSpeedMps);
 
 	if(absSpeedMps > OVERSPEED_THRESHOLD) {
 		const float excessSpeedMps = absSpeedMps - OVERSPEED_THRESHOLD;
 		const float brakeDir = (rawSpeedMps > 0.0f) ? -1.0f : 1.0f;
-
 		const float brakeAmountMps = brakeDir * (OVERSPEED_BRAKE_AMOUNT * excessSpeedMps);
 		actualTargetSpeedSps = MPS_To_SPS(brakeAmountMps);
 	}
 
-	const int16_t leftMotorSpeedSPS = (motorSpeedSps + actualTurningSpeedSps) * MOTOR_SPEED_MULTIPLIER;
-	const int16_t rightMotorSpeedSPS = (motorSpeedSps - actualTurningSpeedSps) * MOTOR_SPEED_MULTIPLIER;
+	// 5. Output to stepper driver timers
+	const int16_t leftMotorSpeedSPS = (int16_t)((targetSpeedSps + actualTurningSpeedSps) * MOTOR_SPEED_MULTIPLIER);
+	const int16_t rightMotorSpeedSPS = (int16_t)((targetSpeedSps - actualTurningSpeedSps) * MOTOR_SPEED_MULTIPLIER);
 
 	setMotorSpeed_Sps(rightMotorSpeedSPS, 1);
 	setMotorSpeed_Sps(leftMotorSpeedSPS, 2);
